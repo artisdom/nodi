@@ -29,6 +29,7 @@ required-features = [ "midir" ]
 [dependencies]
 midir = { version = "0.10.0", optional = true }
 midly = "0.5.3"
+ws2818-rgb-led-spi-driver = "2.0.0"
 
 [dev-dependencies]
 clap = "=3.1.18"

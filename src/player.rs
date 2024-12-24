@@ -1,3 +1,6 @@
+use ws2818_rgb_led_spi_driver::adapter_gen::WS28xxAdapter;
+use ws2818_rgb_led_spi_driver::adapter_spi::WS28xxSpiAdapter;
+
 #[cfg(feature = "midir")]
 use midir::{self, MidiOutputConnection};
 use midly::{
@@ -39,6 +42,10 @@ impl<T: Timer, C: Connection> Player<T, C> {
 	/// Returns `true` if the track is played through the end, `false` otherwise.
 	pub fn play(&mut self, sheet: &[Moment]) -> bool {
 		let mut counter = 0_u32;
+		let mut adapter = WS28xxSpiAdapter::new("/dev/spidev0.0").unwrap();
+		let (num_leds, r, g, b) = (176, 0, 0, 1);
+		let data = vec![(r, g, b); num_leds];
+		adapter.write_rgb(&data).unwrap();
 
 		for moment in sheet {
 			if !moment.is_empty() {
@@ -60,6 +67,9 @@ impl<T: Timer, C: Connection> Player<T, C> {
 
 			counter += 1;
 		}
+
+		let data_clear = vec![(0, 0, 0); num_leds];
+		adapter.write_rgb(&data_clear).unwrap();
 
 		true
 	}
