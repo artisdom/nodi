@@ -43,6 +43,8 @@ impl<T: Timer, C: Connection> Player<T, C> {
 	pub fn play(&mut self, sheet: &[Moment]) -> bool {
 		let mut counter = 0_u32;
 		let mut adapter = WS28xxSpiAdapter::new("/dev/spidev0.0").unwrap();
+
+		let mut led_offset;
 		let (num_leds, r, g, b) = (176, 0, 0, 0);
 		let mut data = vec![(r, g, b); num_leds];
 		adapter.write_rgb(&data).unwrap();
@@ -58,14 +60,36 @@ impl<T: Timer, C: Connection> Player<T, C> {
 						Event::Midi(msg) => {
 							match msg.message {
 								MidiMessage::NoteOn { key, vel } => {
-									data[key.as_int() as usize * 2] = (0, 0, ((vel.as_int() as f32 / 127.0) * (100.0 / 10.0)) as u8);
+
+									if key < 56 {
+										led_offset = 39;
+									} else if key < 69 {
+										led_offset = 40;
+									} else if key < 93 {
+										led_offset = 41;
+									} else {
+										led_offset = 42;
+									}
+
+									data[key.as_int() as usize * 2 - led_offset] = (0, 0, ((vel.as_int() as f32 / 127.0) * (100.0 / 10.0)) as u8);
 									// data[key.as_int() as usize * 2] = (0, 0, u8::from(vel));
 									// data[key.as_int() as usize * 2] = (0, 0, 100);
 									// data[key.as_int() as usize * 2] = (0, 0, 10);
 									adapter.write_rgb(&data).unwrap();
 								}
 								MidiMessage::NoteOff { key, vel: _ } => {
-									data[key.as_int() as usize * 2] = (0, 0, 0);
+
+									if key < 56 {
+										led_offset = 39;
+									} else if key < 69 {
+										led_offset = 40;
+									} else if key < 93 {
+										led_offset = 41;
+									} else {
+										led_offset = 42;
+									}
+
+									data[key.as_int() as usize * 2 - led_offset] = (0, 0, 0);
 									adapter.write_rgb(&data).unwrap();
 								}
 								_ => (),
