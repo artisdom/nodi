@@ -43,8 +43,8 @@ impl<T: Timer, C: Connection> Player<T, C> {
 	pub fn play(&mut self, sheet: &[Moment]) -> bool {
 		let mut counter = 0_u32;
 		let mut adapter = WS28xxSpiAdapter::new("/dev/spidev0.0").unwrap();
-		let (num_leds, r, g, b) = (176, 0, 0, 1);
-		let data = vec![(r, g, b); num_leds];
+		let (num_leds, r, g, b) = (176, 0, 0, 0);
+		let mut data = vec![(r, g, b); num_leds];
 		adapter.write_rgb(&data).unwrap();
 
 		for moment in sheet {
@@ -56,6 +56,21 @@ impl<T: Timer, C: Connection> Player<T, C> {
 					match event {
 						Event::Tempo(val) => self.timer.change_tempo(*val),
 						Event::Midi(msg) => {
+							match msg.message {
+								MidiMessage::NoteOn { key, vel } => {
+									data[key.as_int() as usize * 2] = (0, 0, ((vel.as_int() as f32 / 127.0) * (100.0 / 10.0)) as u8);
+									// data[key.as_int() as usize * 2] = (0, 0, u8::from(vel));
+									// data[key.as_int() as usize * 2] = (0, 0, 100);
+									// data[key.as_int() as usize * 2] = (0, 0, 10);
+									adapter.write_rgb(&data).unwrap();
+								}
+								MidiMessage::NoteOff { key, vel: _ } => {
+									data[key.as_int() as usize * 2] = (0, 0, 0);
+									adapter.write_rgb(&data).unwrap();
+								}
+								_ => (),
+							}
+
 							if !self.con.play(*msg) {
 								return false;
 							}
