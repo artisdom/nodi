@@ -71,13 +71,25 @@ impl<T: Timer, C: Connection> Player<T, C> {
 										led_offset = 42;
 									}
 
-									data[key.as_int() as usize * 2 - led_offset] = (0, 0, ((vel.as_int() as f32 / 127.0) * (100.0 / 10.0)) as u8);
-									// data[key.as_int() as usize * 2] = (0, 0, u8::from(vel));
-									// data[key.as_int() as usize * 2] = (0, 0, 100);
-									// data[key.as_int() as usize * 2] = (0, 0, 10);
+									let index = key.as_int() as usize * 2 - led_offset;
+									let mut value : u8;
+
+									if vel == 0 {
+										value = 0;
+									} else {
+										// value = ((vel.as_int() as f32 / 127.0) * (100.0 / 10.0)) as u8;
+										value = 1;
+
+										if value < 1 {
+											value = 1;
+										}
+									}
+
+									data[index] = (0, 0, value);
 									adapter.write_rgb(&data).unwrap();
+									println!("NoteOn: key: {}, vel: {}, index: {}, value: {}", key, vel, index, value);
 								}
-								MidiMessage::NoteOff { key, vel: _ } => {
+								MidiMessage::NoteOff { key, vel } => {
 
 									if key < 56 {
 										led_offset = 39;
@@ -89,8 +101,11 @@ impl<T: Timer, C: Connection> Player<T, C> {
 										led_offset = 42;
 									}
 
-									data[key.as_int() as usize * 2 - led_offset] = (0, 0, 0);
+									let index = key.as_int() as usize * 2 - led_offset;
+
+									data[index] = (0, 0, 0);
 									adapter.write_rgb(&data).unwrap();
+									println!("NoteOff: key: {}, vel: {}, index: {}, value: 0", key, vel, index);
 								}
 								_ => (),
 							}
