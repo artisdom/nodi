@@ -2,7 +2,7 @@ use ws2818_rgb_led_spi_driver::adapter_gen::WS28xxAdapter;
 use ws2818_rgb_led_spi_driver::adapter_spi::WS28xxSpiAdapter;
 
 #[cfg(feature = "midir")]
-use midir::{self, MidiOutputConnection, MidiInputConnection};
+use midir::{self, MidiInput, MidiOutputConnection, MidiInputConnection, MidiInputPort};
 use midly::{
 	live::{SystemCommon, SystemRealtime},
 	MidiMessage,
@@ -14,19 +14,21 @@ use crate::{
 	player::{Connection},
 };
 
+use std::collections::HashMap;
+
 #[doc = include_str!("doc_learner.md")]
-pub struct Learner<T: Timer, C: Connection, I: InputConnection> {
+pub struct Learner<T: Timer, C: Connection> {
 	/// An active midi connection.
 	pub con: C,
-	pub input_con: I,
+	pub device_no: usize,
 	timer: T,
 }
 
-impl<T: Timer, C: Connection, I: InputConnection> Learner<T, C, I> {
+impl<T: Timer, C: Connection> Learner<T, C> {
 	/// Creates a new [Learner] with the given [Timer] and
 	/// [Connection].
-	pub fn new(timer: T, con: C, input_con: I) -> Self {
-		Self { con, input_con, timer }
+	pub fn new(timer: T, con: C, device_no: usize) -> Self {
+		Self { con, device_no, timer }
 	}
 
 	/// Changes `self.timer`, returning the old one.
@@ -50,6 +52,39 @@ impl<T: Timer, C: Connection, I: InputConnection> Learner<T, C, I> {
 		let (num_leds, r, g, b) = (176, 0, 0, 0);
 		let mut data = vec![(r, g, b); num_leds];
 		adapter.write_rgb(&data).unwrap();
+
+		let notes_to_press = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
+
+		let midi_in = MidiInput::new("learn_midi").unwrap();
+		let in_ports = midi_in.ports();
+		let in_port = &in_ports[self.device_no];
+		let notes_to_press_clone = std::sync::Arc::clone(&notes_to_press);
+
+		let _in_conn = midi_in.connect(in_port, "Casio", move |stamp, message, _| {
+			if message[0] != 254 {
+                println!("{}: {:?} (len = {})", stamp, message, message.len());
+
+				let key = message[1];
+
+				match message[0] {
+					144 => { // Note on
+						let mut notes_to_press = notes_to_press_clone.lock().unwrap();
+						match notes_to_press.get(&key) {
+							Some(&_value) => { notes_to_press.insert(key, true); },
+							_ => {},
+						}
+					}
+					128 => { // Note off
+						let mut notes_to_press = notes_to_press_clone.lock().unwrap();
+						match notes_to_press.get(&key) {
+							Some(&_value) => { notes_to_press.insert(key, false); },
+							_ => {},
+						}
+                    }
+                    _ => (),
+                }
+			}
+		}, ());
 
 		for moment in sheet {
 			if !moment.is_empty() {
@@ -91,6 +126,8 @@ impl<T: Timer, C: Connection, I: InputConnection> Learner<T, C, I> {
 
 									data[index] = (0, 0, value);
 									adapter.write_rgb(&data).unwrap();
+
+									notes_to_press.lock().unwrap().insert(key.as_int(), false);
 									println!("NoteOn: key: {}, vel: {}, index: {}, value: {}", key, vel, index, value);
 								}
 								MidiMessage::NoteOff { key, vel } => {
@@ -114,16 +151,23 @@ impl<T: Timer, C: Connection, I: InputConnection> Learner<T, C, I> {
 								_ => (),
 							}
 
-							if !self.con.play(*msg) {
-								return false;
-							}
+							// if !self.con.play(*msg) {
+							// 	return false;
+							// }
 						}
 						_ => (),
 					};
 				}
+
+				while !notes_to_press.lock().unwrap().is_empty() {
+					if notes_to_press.lock().unwrap().values().all(|&v| v) {
+						break;
+					}
+				}
 			}
 
 			counter += 1;
+			notes_to_press.lock().unwrap().clear();
 		}
 
 		let data_clear = vec![(0, 0, 0); num_leds];

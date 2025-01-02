@@ -1,7 +1,7 @@
 use std::{convert::TryFrom, error::Error, fs};
 
 use clap::{arg, Command};
-use midir::{MidiOutput, MidiOutputConnection, MidiInput, MidiInputConnection};
+use midir::{MidiOutput, MidiOutputConnection, MidiInput, MidiInputConnection, MidiInputPort};
 use nodi::{
 	midly::{Format, Smf},
 	timers::Ticker,
@@ -62,7 +62,7 @@ impl Args {
 		let timer = Ticker::try_from(header.timing)?;
 
 		let con = get_connection(self.device_no)?;
-		let input_con = get_input_connection(self.device_no)?;
+		// let input_port = get_input_port(self.device_no)?;
 
 		let sheet = match header.format {
 			Format::SingleTrack | Format::Sequential => Sheet::sequential(&tracks),
@@ -72,7 +72,7 @@ impl Args {
 		let mut learn_sheet = Sheet::single(&tracks[self.track_no]);
 		learn_sheet.merge_with(extract_meta_events(&sheet));
 
-		let mut learner = Learner::new(timer, con, input_con);
+		let mut learner = Learner::new(timer, con, self.device_no);
 
 		println!("starting playback");
 		learner.learn(&sheet, &learn_sheet);
@@ -116,7 +116,7 @@ fn get_connection(n: usize) -> Result<MidiOutputConnection, Box<dyn Error>> {
 	Ok(out)
 }
 
-fn get_input_connection(n: usize) -> Result<MidiInputConnection<()>, Box<dyn Error>> {
+fn get_input_port(n: usize) -> Result<MidiInputPort, Box<dyn Error>> {
 	let midi_in = MidiInput::new("learn_midi")?;
 
 	let in_ports = midi_in.ports();
@@ -132,8 +132,8 @@ fn get_input_connection(n: usize) -> Result<MidiInputConnection<()>, Box<dyn Err
 	}
 
 	let in_port = &in_ports[n];
-	let in_conn = midi_in.connect(in_port, "cello-tabs", move |_, _, _| {}, ())?;
-	Ok(in_conn)
+	// let in_conn = midi_in.connect(in_port, "cello-tabs", move |_, _, _| {}, ())?;
+	Ok(in_port.clone())
 }
 
 fn list_devices() -> Result<(), Box<dyn Error>> {
