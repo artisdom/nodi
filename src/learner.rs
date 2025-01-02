@@ -113,6 +113,9 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 
 									if vel == 0 {
 										value = 0;
+
+										data[index] = (0, 0, value);
+										adapter.write_rgb(&data).unwrap();
 									} else {
 										// value = ((vel.as_int() as f32 / 127.0) * (100.0 / 10.0)) as u8;
 										value = 1;
@@ -121,11 +124,15 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 											value = 1;
 										}
 
+										data[index] = (1, 1, 1); // show this color first to indicate that this is a new note to be pressed
+										adapter.write_rgb(&data).unwrap();
+
+										data[index] = (0, 0, value); // then show blue to wait for the note to be pressed
+										adapter.write_rgb(&data).unwrap();
+
 										notes_to_press.lock().unwrap().insert(key.as_int(), false);
 									}
 
-									data[index] = (0, 0, value);
-									adapter.write_rgb(&data).unwrap();
 
 									println!("NoteOn: key: {}, vel: {}, index: {}, value: {}", key, vel, index, value);
 								}
