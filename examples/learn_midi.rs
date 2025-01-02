@@ -1,17 +1,18 @@
 use std::{convert::TryFrom, error::Error, fs};
 
 use clap::{arg, Command};
-use midir::{MidiOutput, MidiOutputConnection};
+use midir::{MidiOutput, MidiOutputConnection, MidiInput, MidiInputConnection};
 use nodi::{
 	midly::{Format, Smf},
 	timers::Ticker,
-	Player, Sheet,
+	Learner, Event, Moment, Sheet,
 };
 
 struct Args {
 	file: String,
 	device_no: usize,
 	list: bool,
+	track_no: usize,
 }
 
 impl Args {
@@ -28,17 +29,26 @@ impl Args {
 					}),
 				arg!(-l --list "List available MIDI devices."),
 				arg!(file: [FILE] "A MIDI file to play.").required_unless_present("list"),
+				arg!(-t --track [Track] "Index of the Midi track to learn.")
+					.default_value("0")
+					.validator(|s| {
+						s.parse::<usize>()
+							.map(|_| {})
+							.map_err(|_| String::from("the value must be a positive integer or 0"))
+					}),
 			])
 			.get_matches();
 
 		let list = m.is_present("list");
 		let device_no = m.value_of("device").unwrap().parse::<usize>().unwrap();
 		let file = m.value_of("file").map(String::from).unwrap_or_default();
+		let track_no = m.value_of("track").unwrap().parse::<usize>().unwrap();
 
 		Self {
 			file,
 			device_no,
 			list,
+			track_no,
 		}
 	}
 
@@ -52,18 +62,38 @@ impl Args {
 		let timer = Ticker::try_from(header.timing)?;
 
 		let con = get_connection(self.device_no)?;
+		let input_con = get_input_connection(self.device_no)?;
 
 		let sheet = match header.format {
 			Format::SingleTrack | Format::Sequential => Sheet::sequential(&tracks),
 			Format::Parallel => Sheet::parallel(&tracks),
 		};
 
-		let mut player = Player::new(timer, con);
+		let mut learn_sheet = Sheet::single(&tracks[self.track_no]);
+		learn_sheet.merge_with(extract_meta_events(&sheet));
+
+		let mut learner = Learner::new(timer, con, input_con);
 
 		println!("starting playback");
-		player.play(&sheet);
+		learner.learn(&sheet, &learn_sheet);
 		Ok(())
 	}
+}
+
+pub fn extract_meta_events(sheet: &Sheet) -> Sheet {
+	let mut sheet = sheet.clone();
+
+	for m in sheet.iter_mut() {
+		if !m.is_empty() {
+			m.events.retain(|e| !matches!(e, Event::Midi { .. }));
+
+			if m.events.is_empty() {
+				*m = Moment::default();
+			}
+		}
+	}
+
+	sheet
 }
 
 fn get_connection(n: usize) -> Result<MidiOutputConnection, Box<dyn Error>> {
@@ -84,6 +114,26 @@ fn get_connection(n: usize) -> Result<MidiOutputConnection, Box<dyn Error>> {
 	let out_port = &out_ports[n];
 	let out = midi_out.connect(out_port, "cello-tabs")?;
 	Ok(out)
+}
+
+fn get_input_connection(n: usize) -> Result<MidiInputConnection<()>, Box<dyn Error>> {
+	let midi_in = MidiInput::new("learn_midi")?;
+
+	let in_ports = midi_in.ports();
+	if in_ports.is_empty() {
+		return Err("no MIDI input device detected".into());
+	}
+	if n >= in_ports.len() {
+		return Err(format!(
+			"only {} MIDI devices detected; run with --list  to see them",
+			in_ports.len()
+		)
+		.into());
+	}
+
+	let in_port = &in_ports[n];
+	let in_conn = midi_in.connect(in_port, "cello-tabs", move |_, _, _| {}, ())?;
+	Ok(in_conn)
 }
 
 fn list_devices() -> Result<(), Box<dyn Error>> {

@@ -2,7 +2,7 @@ use ws2818_rgb_led_spi_driver::adapter_gen::WS28xxAdapter;
 use ws2818_rgb_led_spi_driver::adapter_spi::WS28xxSpiAdapter;
 
 #[cfg(feature = "midir")]
-use midir::{self, MidiOutputConnection};
+use midir::{self, MidiOutputConnection, MidiInputConnection};
 use midly::{
 	live::{SystemCommon, SystemRealtime},
 	MidiMessage,
@@ -11,20 +11,22 @@ use midly::{
 use crate::{
 	event::{Event, MidiEvent, Moment},
 	Timer,
+	player::{Connection},
 };
 
-#[doc = include_str!("doc_player.md")]
-pub struct Player<T: Timer, C: Connection> {
+#[doc = include_str!("doc_learner.md")]
+pub struct Learner<T: Timer, C: Connection, I: InputConnection> {
 	/// An active midi connection.
 	pub con: C,
+	pub input_con: I,
 	timer: T,
 }
 
-impl<T: Timer, C: Connection> Player<T, C> {
-	/// Creates a new [Player] with the given [Timer] and
+impl<T: Timer, C: Connection, I: InputConnection> Learner<T, C, I> {
+	/// Creates a new [Learner] with the given [Timer] and
 	/// [Connection].
-	pub fn new(timer: T, con: C) -> Self {
-		Self { con, timer }
+	pub fn new(timer: T, con: C, input_con: I) -> Self {
+		Self { con, input_con, timer }
 	}
 
 	/// Changes `self.timer`, returning the old one.
@@ -32,15 +34,15 @@ impl<T: Timer, C: Connection> Player<T, C> {
 		std::mem::replace(&mut self.timer, timer)
 	}
 
-	/// Plays the given [Moment] slice.
+	/// Learn the given [Moment] slice.
 	///
 	/// # Notes
 	/// The tempo change events are handled by `self.timer` and playing sound by
 	/// `self.con`.
 	///
-	/// Stops playing if [Connection::play] returns `false`.
+	/// Stops learning if [Connection::play] returns `false`.
 	/// Returns `true` if the track is played through the end, `false` otherwise.
-	pub fn play(&mut self, sheet: &[Moment]) -> bool {
+	pub fn learn(&mut self, sheet: &[Moment], learn_sheet: &[Moment]) -> bool {
 		let mut counter = 0_u32;
 		let mut adapter = WS28xxSpiAdapter::new("/dev/spidev0.0").unwrap();
 
@@ -130,6 +132,7 @@ impl<T: Timer, C: Connection> Player<T, C> {
 		true
 	}
 }
+/*
 
 /// Any type that can play sound, given a [MidiEvent].
 ///
@@ -138,7 +141,7 @@ impl<T: Timer, C: Connection> Player<T, C> {
 pub trait Connection {
 	/// Given a [MidiEvent], plays the message.
 	///
-	/// If this function returns `false`, [Player::play] will stop playing and return.
+	/// If this function returns `false`, [Learner::play] will stop playing and return.
 	fn play(&mut self, event: MidiEvent) -> bool;
 
 	/// Sends a system realtime message.
@@ -190,4 +193,17 @@ impl Connection for MidiOutputConnection {
 		let _ = midly::live::LiveEvent::Common(msg).write(&mut buf);
 		let _ = self.send(&buf);
 	}
+}
+*/
+pub trait InputConnection {
+	// fn read(&mut self) -> Option<MidiEvent>;
+}
+
+#[cfg(feature = "midir")]
+impl InputConnection for MidiInputConnection<()> {
+	// fn read(&mut self) -> Option<MidiEvent> {
+	// 	let mut buf = [0; 3];
+	// 	let _ = self.read(&mut buf);
+	// 	MidiEvent::try_from(buf).ok()
+	// }
 }
