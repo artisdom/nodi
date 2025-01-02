@@ -4,12 +4,13 @@
 
 mod event;
 mod player;
+mod learner;
 mod sheet;
 pub mod timers;
 
 use std::time::Duration;
 
-pub use self::{event::*, player::*, sheet::*};
+pub use self::{event::*, player::*, learner::*, sheet::*};
 #[cfg(feature = "midir")]
 pub use midir;
 pub use midly;
