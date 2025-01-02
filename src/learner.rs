@@ -95,8 +95,6 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 					match event {
 						Event::Tempo(val) => self.timer.change_tempo(*val),
 						Event::Midi(msg) => {
-							println!("msg.channel: {}", msg.channel.as_int());
-
 							match msg.message {
 								MidiMessage::NoteOn { key, vel } => {
 
@@ -122,12 +120,13 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 										if value < 1 {
 											value = 1;
 										}
+
+										notes_to_press.lock().unwrap().insert(key.as_int(), false);
 									}
 
 									data[index] = (0, 0, value);
 									adapter.write_rgb(&data).unwrap();
 
-									notes_to_press.lock().unwrap().insert(key.as_int(), false);
 									println!("NoteOn: key: {}, vel: {}, index: {}, value: {}", key, vel, index, value);
 								}
 								MidiMessage::NoteOff { key, vel } => {
