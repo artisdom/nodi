@@ -24,6 +24,22 @@ pub struct Learner<T: Timer, C: Connection> {
 	timer: T,
 }
 
+fn get_led_index(key: u8) -> usize {
+	let led_offset;
+
+	if key < 56 {
+		led_offset = 39;
+	} else if key < 69 {
+		led_offset = 40;
+	} else if key < 93 {
+		led_offset = 41;
+	} else {
+		led_offset = 42;
+	}
+
+	key as usize * 2 - led_offset
+}
+
 impl<T: Timer, C: Connection> Learner<T, C> {
 	/// Creates a new [Learner] with the given [Timer] and
 	/// [Connection].
@@ -48,7 +64,6 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 		let mut counter = 0_u32;
 		let mut adapter = WS28xxSpiAdapter::new("/dev/spidev0.0").unwrap();
 
-		let mut led_offset;
 		let (num_leds, r, g, b) = (176, 0, 0, 0);
 		let mut data = vec![(r, g, b); num_leds];
 		adapter.write_rgb(&data).unwrap();
@@ -97,18 +112,7 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 						Event::Midi(msg) => {
 							match msg.message {
 								MidiMessage::NoteOn { key, vel } => {
-
-									if key < 56 {
-										led_offset = 39;
-									} else if key < 69 {
-										led_offset = 40;
-									} else if key < 93 {
-										led_offset = 41;
-									} else {
-										led_offset = 42;
-									}
-
-									let index = key.as_int() as usize * 2 - led_offset;
+									let index = get_led_index(key.as_int());
 									let mut value : u8;
 
 									if vel == 0 {
@@ -118,13 +122,13 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 										adapter.write_rgb(&data).unwrap();
 									} else {
 										// value = ((vel.as_int() as f32 / 127.0) * (100.0 / 10.0)) as u8;
+										// if value < 1 {
+										// 	value = 1;
+										// }
+
 										value = 1;
 
-										if value < 1 {
-											value = 1;
-										}
-
-										data[index] = (1, 1, 1); // show this color first to indicate that this is a new note to be pressed
+										data[index] = (10, 10, 0); // show this color first to indicate that this is a new note to be pressed
 										adapter.write_rgb(&data).unwrap();
 
 										data[index] = (0, 0, value); // then show blue to wait for the note to be pressed
@@ -133,22 +137,10 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 										notes_to_press.lock().unwrap().insert(key.as_int(), false);
 									}
 
-
 									println!("NoteOn: key: {}, vel: {}, index: {}, value: {}", key, vel, index, value);
 								}
 								MidiMessage::NoteOff { key, vel } => {
-
-									if key < 56 {
-										led_offset = 39;
-									} else if key < 69 {
-										led_offset = 40;
-									} else if key < 93 {
-										led_offset = 41;
-									} else {
-										led_offset = 42;
-									}
-
-									let index = key.as_int() as usize * 2 - led_offset;
+									let index = get_led_index(key.as_int());
 
 									data[index] = (0, 0, 0);
 									adapter.write_rgb(&data).unwrap();
