@@ -62,11 +62,13 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 	/// Returns `true` if the track is played through the end, `false` otherwise.
 	pub fn learn(&mut self, sheet: &[Moment], learn_sheet: &[Moment]) -> bool {
 		let mut counter = 0_u32;
-		let mut adapter = WS28xxSpiAdapter::new("/dev/spidev0.0").unwrap();
+		let adapter = std::sync::Arc::new(std::sync::Mutex::new(
+			WS28xxSpiAdapter::new("/dev/spidev0.0").unwrap()
+		));
 
 		let (num_leds, r, g, b) = (176, 0, 0, 0);
-		let mut data = vec![(r, g, b); num_leds];
-		adapter.write_rgb(&data).unwrap();
+		let led_data = std::sync::Arc::new(std::sync::Mutex::new(vec![(r, g, b); num_leds]));
+		adapter.lock().unwrap().write_rgb(&led_data.lock().unwrap()).unwrap();
 
 		let notes_to_press = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
 
@@ -74,30 +76,41 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 		let in_ports = midi_in.ports();
 		let in_port = &in_ports[self.device_no];
 		let notes_to_press_clone = std::sync::Arc::clone(&notes_to_press);
+		let led_data_clone = std::sync::Arc::clone(&led_data);
+		let adapter_clone = std::sync::Arc::clone(&adapter);
 
 		let _in_conn = midi_in.connect(in_port, "Casio", move |stamp, message, _| {
 			if message[0] != 254 {
-                println!("{}: {:?} (len = {})", stamp, message, message.len());
+				println!("{}: {:?} (len = {})", stamp, message, message.len());
 
 				let key = message[1];
+				let index = get_led_index(key);
 
 				match message[0] {
 					144 => { // Note on
 						let mut notes_to_press = notes_to_press_clone.lock().unwrap();
+						let mut data = led_data_clone.lock().unwrap();
 						match notes_to_press.get(&key) {
 							Some(&_value) => { notes_to_press.insert(key, true); },
-							_ => {},
+							_ => {
+								data[index] = (10, 0, 0);
+								adapter_clone.lock().unwrap().write_rgb(&data).unwrap();
+							},
 						}
 					}
 					128 => { // Note off
 						let mut notes_to_press = notes_to_press_clone.lock().unwrap();
+						let mut data = led_data_clone.lock().unwrap();
 						match notes_to_press.get(&key) {
 							Some(&_value) => { notes_to_press.insert(key, false); },
-							_ => {},
+							_ => {
+								data[index] = (0, 0, 0);
+								adapter_clone.lock().unwrap().write_rgb(&data).unwrap();
+							},
 						}
-                    }
-                    _ => (),
-                }
+					}
+					_ => (),
+				}
 			}
 		}, ());
 
@@ -114,36 +127,27 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 								MidiMessage::NoteOn { key, vel } => {
 									let index = get_led_index(key.as_int());
 									let mut value : u8;
+									let mut data = led_data.lock().unwrap();
 
 									if vel == 0 {
 										value = 0;
-
 										data[index] = (0, 0, value);
-										adapter.write_rgb(&data).unwrap();
 									} else {
-										// value = ((vel.as_int() as f32 / 127.0) * (100.0 / 10.0)) as u8;
-										// if value < 1 {
-										// 	value = 1;
-										// }
-
 										value = 1;
-
 										data[index] = (10, 10, 0); // show this color first to indicate that this is a new note to be pressed
-										adapter.write_rgb(&data).unwrap();
+										adapter.lock().unwrap().write_rgb(&data).unwrap();
 
 										data[index] = (0, 0, value); // then show blue to wait for the note to be pressed
-										adapter.write_rgb(&data).unwrap();
-
 										notes_to_press.lock().unwrap().insert(key.as_int(), false);
 									}
-
+									adapter.lock().unwrap().write_rgb(&data).unwrap();
 									println!("NoteOn: key: {}, vel: {}, index: {}, value: {}", key, vel, index, value);
 								}
 								MidiMessage::NoteOff { key, vel } => {
 									let index = get_led_index(key.as_int());
-
+									let mut data = led_data.lock().unwrap();
 									data[index] = (0, 0, 0);
-									adapter.write_rgb(&data).unwrap();
+									adapter.lock().unwrap().write_rgb(&data).unwrap();
 									println!("NoteOff: key: {}, vel: {}, index: {}, value: 0", key, vel, index);
 								}
 								_ => (),
@@ -169,7 +173,7 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 		}
 
 		let data_clear = vec![(0, 0, 0); num_leds];
-		adapter.write_rgb(&data_clear).unwrap();
+		adapter.lock().unwrap().write_rgb(&data_clear).unwrap();
 
 		true
 	}
