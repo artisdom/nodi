@@ -15,6 +15,7 @@ use crate::{
 };
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 #[doc = include_str!("doc_learner.md")]
 pub struct Learner<T: Timer, C: Connection> {
@@ -71,11 +72,13 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 		adapter.lock().unwrap().write_rgb(&led_data.lock().unwrap()).unwrap();
 
 		let notes_to_press = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
+		let notes_pressed = std::sync::Arc::new(std::sync::Mutex::new(HashSet::new()));
 
 		let midi_in = MidiInput::new("learn_midi").unwrap();
 		let in_ports = midi_in.ports();
 		let in_port = &in_ports[self.device_no];
 		let notes_to_press_clone = std::sync::Arc::clone(&notes_to_press);
+		let notes_pressed_clone = std::sync::Arc::clone(&notes_pressed);
 		let led_data_clone = std::sync::Arc::clone(&led_data);
 		let adapter_clone = std::sync::Arc::clone(&adapter);
 
@@ -88,25 +91,29 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 
 				match message[0] {
 					144 => { // Note on
+						notes_pressed_clone.lock().unwrap().insert(key);
+
 						let mut notes_to_press = notes_to_press_clone.lock().unwrap();
-						let mut data = led_data_clone.lock().unwrap();
-						match notes_to_press.get(&key) {
-							Some(&_value) => { notes_to_press.insert(key, true); },
-							_ => {
-								data[index] = (10, 0, 0);
-								adapter_clone.lock().unwrap().write_rgb(&data).unwrap();
-							},
+
+						if notes_to_press.contains_key(&key) {
+							notes_to_press.insert(key, true); // mark the note as pressed
+						} else {
+							let mut data = led_data_clone.lock().unwrap();
+							data[index] = (1, 0, 0); // show red led to show a wrong note pressed
+							adapter_clone.lock().unwrap().write_rgb(&data).unwrap();
 						}
 					}
 					128 => { // Note off
+						notes_pressed_clone.lock().unwrap().remove(&key);
+
 						let mut notes_to_press = notes_to_press_clone.lock().unwrap();
-						let mut data = led_data_clone.lock().unwrap();
-						match notes_to_press.get(&key) {
-							Some(&_value) => { notes_to_press.insert(key, false); },
-							_ => {
-								data[index] = (0, 0, 0);
-								adapter_clone.lock().unwrap().write_rgb(&data).unwrap();
-							},
+
+						if notes_to_press.contains_key(&key) {
+							notes_to_press.insert(key, false); // mark the note as released
+						} else {
+							let mut data = led_data_clone.lock().unwrap();
+							data[index] = (0, 0, 0); // clear the wrong note led
+							adapter_clone.lock().unwrap().write_rgb(&data).unwrap();
 						}
 					}
 					_ => (),
@@ -133,11 +140,13 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 										value = 0;
 										data[index] = (0, 0, value);
 									} else {
-										value = 1;
-										data[index] = (10, 10, 0); // show this color first to indicate that this is a new note to be pressed
-										adapter.lock().unwrap().write_rgb(&data).unwrap();
+										if notes_pressed.lock().unwrap().contains(&key.as_int()) {
+											value = 5; // use a stronger color to show the same note needs to be pressed again
+										} else {
+											value = 1;
+										}
+										data[index] = (0, 0, value);
 
-										data[index] = (0, 0, value); // then show blue to wait for the note to be pressed
 										notes_to_press.lock().unwrap().insert(key.as_int(), false);
 									}
 									adapter.lock().unwrap().write_rgb(&data).unwrap();
