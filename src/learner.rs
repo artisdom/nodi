@@ -16,6 +16,7 @@ use crate::{
 
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::sync::{Arc, Mutex, Condvar};
 
 #[doc = include_str!("doc_learner.md")]
 pub struct Learner<T: Timer, C: Connection> {
@@ -73,6 +74,7 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 
 		let notes_to_press = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
 		let notes_pressed = std::sync::Arc::new(std::sync::Mutex::new(HashSet::new()));
+		let condvar_pair = Arc::new((Mutex::new(false), Condvar::new()));
 
 		let midi_in = MidiInput::new("learn_midi").unwrap();
 		let in_ports = midi_in.ports();
@@ -81,8 +83,11 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 		let notes_pressed_clone = std::sync::Arc::clone(&notes_pressed);
 		let led_data_clone = std::sync::Arc::clone(&led_data);
 		let adapter_clone = std::sync::Arc::clone(&adapter);
+		let condvar_pair_clone = condvar_pair.clone();
 
 		let _in_conn = midi_in.connect(in_port, "Casio", move |stamp, message, _| {
+			let &(ref condvar_lock, ref condvar) = &*condvar_pair_clone;
+
 			if message[0] != 254 {
 				println!("{}: {:?} (len = {})", stamp, message, message.len());
 
@@ -97,6 +102,8 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 
 						if notes_to_press.contains_key(&key) {
 							notes_to_press.insert(key, true); // mark the note as pressed
+							*condvar_lock.lock().unwrap() = true;
+							condvar.notify_one();
 						} else {
 							let mut data = led_data_clone.lock().unwrap();
 							data[index] = (1, 0, 0); // show red led to show a wrong note pressed
@@ -141,7 +148,7 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 										data[index] = (0, 0, value);
 									} else {
 										if notes_pressed.lock().unwrap().contains(&key.as_int()) {
-											value = 5; // use a stronger color to show the same note needs to be pressed again
+											value = 3; // use a deeper color to show the same note needs to be pressed again
 										} else {
 											value = 1;
 										}
@@ -174,6 +181,11 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 					if notes_to_press.lock().unwrap().values().all(|&v| v) {
 						break;
 					}
+
+					// Wait for keys being pressed.
+					let &(ref condvar_lock, ref condvar) = &*condvar_pair;
+					let mut condvar_lock_state = condvar_lock.lock().unwrap();
+					condvar_lock_state = condvar.wait(condvar_lock_state).unwrap();
 				}
 			}
 
