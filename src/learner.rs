@@ -60,7 +60,7 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 	///
 	/// Stops learning if [Connection::play] returns `false`.
 	/// Returns `true` if the track is played through the end, `false` otherwise.
-	pub fn learn(&mut self, smf: &Smf, hand_no: usize, track_no: usize) -> bool {
+	pub fn learn(&mut self, sheet: &[Moment], right_hand_track: usize, left_hand_track: usize, learn_track: usize) -> bool {
 		let mut counter = 0_u32;
 		let adapter = std::sync::Arc::new(std::sync::Mutex::new(
 			WS28xxSpiAdapter::new("/dev/spidev0.0").unwrap()
@@ -82,11 +82,6 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 		let led_data_clone = std::sync::Arc::clone(&led_data);
 		let adapter_clone = std::sync::Arc::clone(&adapter);
 		let condvar_pair_clone = condvar_pair.clone();
-
-		let sheet = match smf.header.format {
-			Format::SingleTrack | Format::Sequential => Sheet::sequential(&smf.tracks),
-			Format::Parallel => Sheet::parallel(&smf.tracks),
-		};
 
 		let _in_conn = midi_in.connect(in_port, "Casio", move |stamp, message, _| {
 			let &(ref condvar_lock, ref condvar) = &*condvar_pair_clone;
@@ -140,6 +135,9 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 					match event {
 						Event::Tempo(val) => self.timer.change_tempo(*val),
 						Event::Midi(msg) => {
+							let msg_track = msg.track.as_int() as usize;
+							let mut play_note = true;
+
 							match msg.message {
 								MidiMessage::NoteOn { key, vel } => {
 									let index = get_led_index(key.as_int());
@@ -155,9 +153,17 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 										} else {
 											value = 1;
 										}
-										data[index] = (0, 0, value);
 
-										notes_to_press.lock().unwrap().insert(key.as_int(), false);
+										if msg_track == right_hand_track {
+											data[index] = (0, value, 0); // Blue
+										} else {
+											data[index] = (0, 0, value); // Green
+										}
+
+										if msg_track == learn_track {
+											notes_to_press.lock().unwrap().insert(key.as_int(), false);
+											play_note = false;
+										}
 									}
 									adapter.lock().unwrap().write_rgb(&data).unwrap();
 									println!("NoteOn: key: {}, vel: {}, index: {}, value: {}", key, vel, index, value);
@@ -167,14 +173,23 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 									let mut data = led_data.lock().unwrap();
 									data[index] = (0, 0, 0);
 									adapter.lock().unwrap().write_rgb(&data).unwrap();
+
+									if msg_track == learn_track {
+										play_note = false;
+									}
+
 									println!("NoteOff: key: {}, vel: {}, index: {}, value: 0", key, vel, index);
 								}
 								_ => (),
 							}
 
-							// if !self.con.play(*msg) {
-							// 	return false;
-							// }
+							if play_note {
+								if !self.con.play(*msg) {
+									return false;
+								}
+							}
+
+							play_note = true; // reset play_note
 						}
 						_ => (),
 					};
