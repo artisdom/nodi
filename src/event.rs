@@ -79,17 +79,16 @@ impl MidiEvent {
 	}
 }
 
-impl<'a> TryFrom<(TrackEventKind<'a>, u4)> for Event {
+impl<'a> TryFrom<TrackEventKind<'a>> for Event {
 	type Error = &'static str;
 
-	/// Tries to create [Self] from a [TrackEventKind] and a track.
+	/// Tries to create [Self] from a [TrackEventKind].
 	///
 	/// # Errors
 	/// Will return an error if the given [TrackEventKind] is not compatible.
-	fn try_from(value: (TrackEventKind<'_>, u4)) -> Result<Self, Self::Error> {
-		let (event, track) = value;
+	fn try_from(event: TrackEventKind<'_>) -> Result<Self, Self::Error> {
 		Ok(match event {
-			TrackEventKind::Midi { channel, message } => Self::Midi(MidiEvent { track, channel, message }),
+			TrackEventKind::Midi { channel, message } => Self::Midi(MidiEvent { track : 0.into(), channel, message }),
 			TrackEventKind::Meta(MetaMessage::Tempo(n)) => Self::Tempo(u32::from(n)),
 			TrackEventKind::Meta(MetaMessage::TimeSignature(a, b, c, d)) => {
 				Self::TimeSignature(a, b, c, d)

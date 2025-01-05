@@ -5,7 +5,7 @@ use core::{
 	ops::{Deref, Index, IndexMut},
 };
 
-use midly::{num::u4, TrackEvent};
+use midly::TrackEvent;
 
 use crate::{Event, Moment, Sheet};
 
@@ -25,7 +25,7 @@ impl IntoIterator for Sheet {
 }
 
 impl<'a> From<&[TrackEvent<'a>]> for Sheet {
-	fn from(events: &[TrackEvent<'_>], track_no : u4) -> Self {
+	fn from(events: &[TrackEvent<'_>]) -> Self {
 		let total_frames = events
 			.iter()
 			.map(|e| u32::from(e.delta) as usize)
@@ -37,7 +37,7 @@ impl<'a> From<&[TrackEvent<'a>]> for Sheet {
 
 		for event in events {
 			cur_pos += u32::from(event.delta) as usize;
-			if let Ok(e) = Event::try_from(event.kind, track_no) {
+			if let Ok(e) = Event::try_from(event.kind) {
 				buf[cur_pos].push(e);
 			}
 		}
