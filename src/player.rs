@@ -158,6 +158,7 @@ pub trait Connection {
 		for ch in 0..16 {
 			for note in 0..=127 {
 				self.play(MidiEvent {
+					track: 0.into(),
 					channel: ch.into(),
 					message: MidiMessage::NoteOff {
 						key: note.into(),

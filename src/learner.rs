@@ -5,13 +5,11 @@ use ws2818_rgb_led_spi_driver::adapter_spi::WS28xxSpiAdapter;
 use midir::{self, MidiInput, MidiOutputConnection, MidiInputConnection, MidiInputPort};
 use midly::{
 	live::{SystemCommon, SystemRealtime},
-	MidiMessage,
+	MidiMessage, Smf, Format,
 };
 
 use crate::{
-	event::{Event, MidiEvent, Moment},
-	Timer,
-	player::{Connection},
+	event::{Event, MidiEvent, Moment}, player::Connection, Sheet, Timer
 };
 
 use std::collections::HashMap;
@@ -62,7 +60,7 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 	///
 	/// Stops learning if [Connection::play] returns `false`.
 	/// Returns `true` if the track is played through the end, `false` otherwise.
-	pub fn learn(&mut self, sheet: &[Moment], learn_sheet: &[Moment]) -> bool {
+	pub fn learn(&mut self, smf: &Smf, hand_no: usize, track_no: usize) -> bool {
 		let mut counter = 0_u32;
 		let adapter = std::sync::Arc::new(std::sync::Mutex::new(
 			WS28xxSpiAdapter::new("/dev/spidev0.0").unwrap()
@@ -85,6 +83,11 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 		let adapter_clone = std::sync::Arc::clone(&adapter);
 		let condvar_pair_clone = condvar_pair.clone();
 
+		let sheet = match smf.header.format {
+			Format::SingleTrack | Format::Sequential => Sheet::sequential(&smf.tracks),
+			Format::Parallel => Sheet::parallel(&smf.tracks),
+		};
+
 		let _in_conn = midi_in.connect(in_port, "Casio", move |stamp, message, _| {
 			let &(ref condvar_lock, ref condvar) = &*condvar_pair_clone;
 
@@ -94,8 +97,8 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 				let key = message[1];
 				let index = get_led_index(key);
 
-				match message[0] {
-					144 => { // Note on
+				match message[0] & 0xF0 {
+					0x90 => { // Note on
 						notes_pressed_clone.lock().unwrap().insert(key);
 
 						let mut notes_to_press = notes_to_press_clone.lock().unwrap();
@@ -110,7 +113,7 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 							adapter_clone.lock().unwrap().write_rgb(&data).unwrap();
 						}
 					}
-					128 => { // Note off
+					0x80 => { // Note off
 						notes_pressed_clone.lock().unwrap().remove(&key);
 
 						let mut notes_to_press = notes_to_press_clone.lock().unwrap();

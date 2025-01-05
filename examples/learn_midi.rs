@@ -2,6 +2,7 @@ use std::{convert::TryFrom, error::Error, fs};
 
 use clap::{arg, Command};
 use midir::{MidiOutput, MidiOutputConnection, MidiInput, MidiInputConnection, MidiInputPort};
+use midly::TrackEvent;
 use nodi::{
 	midly::{Format, Smf},
 	timers::Ticker,
@@ -12,6 +13,7 @@ struct Args {
 	file: String,
 	device_no: usize,
 	list: bool,
+	hand_no: usize,
 	track_no: usize,
 }
 
@@ -29,6 +31,13 @@ impl Args {
 					}),
 				arg!(-l --list "List available MIDI devices."),
 				arg!(file: [FILE] "A MIDI file to play.").required_unless_present("list"),
+				arg!(-h --hand [Hand] "Learn Right(0), Left(1) or Both(2) hand notes.")
+					.default_value("0")
+					.validator(|s| {
+						s.parse::<usize>()
+							.map(|_| {})
+							.map_err(|_| String::from("the value must be 0, 1, or 2"))
+					}),
 				arg!(-t --track [Track] "Index of the Midi track to learn.")
 					.default_value("0")
 					.validator(|s| {
@@ -42,12 +51,14 @@ impl Args {
 		let list = m.is_present("list");
 		let device_no = m.value_of("device").unwrap().parse::<usize>().unwrap();
 		let file = m.value_of("file").map(String::from).unwrap_or_default();
+		let hand_no = m.value_of("hand").unwrap().parse::<usize>().unwrap();
 		let track_no = m.value_of("track").unwrap().parse::<usize>().unwrap();
 
 		Self {
 			file,
 			device_no,
 			list,
+			hand_no,
 			track_no,
 		}
 	}
@@ -58,24 +69,18 @@ impl Args {
 		}
 
 		let data = fs::read(&self.file)?;
-		let Smf { header, tracks } = Smf::parse(&data)?;
-		let timer = Ticker::try_from(header.timing)?;
+		let smf = Smf::parse(&data)?;
+		let timer = Ticker::try_from(smf.header.timing)?;
 
 		let con = get_connection(self.device_no)?;
-		// let input_port = get_input_port(self.device_no)?;
 
-		let sheet = match header.format {
-			Format::SingleTrack | Format::Sequential => Sheet::sequential(&tracks),
-			Format::Parallel => Sheet::parallel(&tracks),
-		};
-
-		let mut learn_sheet = Sheet::single(&tracks[self.track_no]);
-		learn_sheet.merge_with(extract_meta_events(&sheet));
+		// let mut learn_sheet = Sheet::single(&tracks[self.track_no]);
+		// learn_sheet.merge_with(extract_meta_events(&sheet));
 
 		let mut learner = Learner::new(timer, con, self.device_no);
 
 		println!("starting playback");
-		learner.learn(&sheet, &learn_sheet);
+		learner.learn(&smf, self.hand_no, self.track_no);
 		Ok(())
 	}
 }
