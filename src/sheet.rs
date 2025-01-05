@@ -1,4 +1,4 @@
-use midly::{num::u4, TrackEvent};
+use midly::TrackEvent;
 
 use crate::event::Moment;
 
@@ -31,17 +31,11 @@ impl Sheet {
 			return Self::default();
 		}
 
-		let mut track_no : u4 = 0.into();
-
-		let mut first = Self::from(tracks[0].as_slice(), track_no);
-
-		track_no += 1.into();
+		let mut first = Self::from(tracks[0].as_slice());
 
 		for track in &tracks[1..] {
-			let sh = Self::from(track.as_slice(), track_no);
+			let sh = Self::from(track.as_slice());
 			first.merge_with(sh);
-
-			track_no += 1.into();
 		}
 		first
 	}
@@ -57,18 +51,12 @@ impl Sheet {
 			return Self::default();
 		}
 
-		let mut track_no : u4 = 0.into();
-		let mut first = Self::from(tracks[0].as_slice(), track_no);
-
-		track_no += 1.into();
+		let mut first = Self::from(tracks[0].as_slice());
 
 		for track in &tracks[1..] {
-			let sh = Self::from(track.as_slice(), track_no);
+			let sh = Self::from(track.as_slice());
 			first.extend(sh);
-
-			track_no += 1.into();
 		}
-
 		first
 	}
 

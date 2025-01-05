@@ -5,7 +5,7 @@ use core::{
 	ops::{Deref, Index, IndexMut},
 };
 
-use midly::{num::u4, TrackEvent};
+use midly::TrackEvent;
 
 use crate::{Event, Moment, Sheet};
 
@@ -24,7 +24,7 @@ impl IntoIterator for Sheet {
 	}
 }
 
-impl From<&[TrackEvent<'_>]> for Sheet {
+impl<'a> From<&[TrackEvent<'a>]> for Sheet {
 	fn from(events: &[TrackEvent<'_>]) -> Self {
 		let total_frames = events
 			.iter()
