@@ -5,7 +5,7 @@ use core::{
 	ops::{Deref, Index, IndexMut},
 };
 
-use midly::TrackEvent;
+use midly::{num::u4, TrackEvent};
 
 use crate::{Event, Moment, Sheet};
 
