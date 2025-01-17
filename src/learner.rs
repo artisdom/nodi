@@ -9,7 +9,8 @@ use midly::{
 };
 
 use crate::{
-	event::{Event, MidiEvent, Moment}, player::Connection, Sheet, Timer
+	event::{Event, MidiEvent, Moment}, player::Connection, Sheet, Timer,
+	get_led_index,
 };
 
 use std::collections::HashMap;
@@ -22,22 +23,6 @@ pub struct Learner<T: Timer, C: Connection> {
 	pub con: C,
 	pub device_no: usize,
 	timer: T,
-}
-
-fn get_led_index(key: u8) -> usize {
-	let led_offset;
-
-	if key < 56 {
-		led_offset = 39;
-	} else if key < 69 {
-		led_offset = 40;
-	} else if key < 93 {
-		led_offset = 41;
-	} else {
-		led_offset = 42;
-	}
-
-	key as usize * 2 - led_offset
 }
 
 impl<T: Timer, C: Connection> Learner<T, C> {
