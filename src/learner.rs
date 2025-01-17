@@ -149,7 +149,7 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 										data[index] = (0, 0, value);
 									} else {
 										if notes_pressed.lock().unwrap().contains(&key.as_int()) {
-											value = 3; // use a deeper color to show the same note needs to be pressed again
+											value = 2; // use a deeper color to show the same note needs to be pressed again
 										} else {
 											value = 1;
 										}
@@ -160,7 +160,7 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 											data[index] = (0, 0, value); // Green
 										}
 
-										if msg_track == learn_track {
+										if msg_track == learn_track && key >= 36 && key <= 96 { // support 61 keyborad
 											notes_to_press.lock().unwrap().insert(key.as_int(), false);
 											play_note = false;
 										}
@@ -174,7 +174,7 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 									data[index] = (0, 0, 0);
 									adapter.lock().unwrap().write_rgb(&data).unwrap();
 
-									if msg_track == learn_track {
+									if msg_track == learn_track && key >= 36 && key <= 96 {
 										play_note = false;
 									}
 
