@@ -63,3 +63,19 @@ pub trait Timer {
 		counter
 	}
 }
+
+pub fn get_led_index(key: u8) -> usize {
+	let led_offset;
+
+	if key < 56 {
+		led_offset = 39;
+	} else if key < 69 {
+		led_offset = 40;
+	} else if key < 93 {
+		led_offset = 41;
+	} else {
+		led_offset = 42;
+	}
+
+	key as usize * 2 - led_offset
+}

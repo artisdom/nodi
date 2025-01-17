@@ -11,6 +11,7 @@ use midly::{
 use crate::{
 	event::{Event, MidiEvent, Moment},
 	Timer,
+	get_led_index,
 };
 
 #[doc = include_str!("doc_player.md")]
@@ -44,7 +45,6 @@ impl<T: Timer, C: Connection> Player<T, C> {
 		let mut counter = 0_u32;
 		let mut adapter = WS28xxSpiAdapter::new("/dev/spidev0.0").unwrap();
 
-		let mut led_offset;
 		let (num_leds, r, g, b) = (176, 0, 0, 0);
 		let mut data = vec![(r, g, b); num_leds];
 		adapter.write_rgb(&data).unwrap();
@@ -63,17 +63,7 @@ impl<T: Timer, C: Connection> Player<T, C> {
 							match msg.message {
 								MidiMessage::NoteOn { key, vel } => {
 
-									if key < 56 {
-										led_offset = 39;
-									} else if key < 69 {
-										led_offset = 40;
-									} else if key < 93 {
-										led_offset = 41;
-									} else {
-										led_offset = 42;
-									}
-
-									let index = key.as_int() as usize * 2 - led_offset;
+									let index = get_led_index(key.as_int());
 									let mut value : u8;
 
 									if vel == 0 {
@@ -93,17 +83,7 @@ impl<T: Timer, C: Connection> Player<T, C> {
 								}
 								MidiMessage::NoteOff { key, vel } => {
 
-									if key < 56 {
-										led_offset = 39;
-									} else if key < 69 {
-										led_offset = 40;
-									} else if key < 93 {
-										led_offset = 41;
-									} else {
-										led_offset = 42;
-									}
-
-									let index = key.as_int() as usize * 2 - led_offset;
+									let index = get_led_index(key.as_int());
 
 									data[index] = (0, 0, 0);
 									adapter.write_rgb(&data).unwrap();
