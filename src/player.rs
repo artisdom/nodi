@@ -69,12 +69,13 @@ impl<T: Timer, C: Connection> Player<T, C> {
 									if vel == 0 {
 										value = (0, 0, 0);
 									} else {
-										value = rainbow_color2(key.as_int());
+										// value = rainbow_color2(key.as_int());
+										value = (0, 0, 1);
 									}
 
 									data[index] = value;
 									adapter.write_rgb(&data).unwrap();
-									println!("NoteOn: key: {}, vel: {}, index: {}", key, vel, index);
+									println!("NoteOn: key: {}, vel: {}, index: {}, value: {:?}", key, vel, index, value);
 								}
 								MidiMessage::NoteOff { key, vel } => {
 
