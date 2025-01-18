@@ -13,9 +13,10 @@ use crate::{
 	get_led_index,
 };
 
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, Condvar};
+use std::time::Instant;
 
 #[doc = include_str!("doc_learner.md")]
 pub struct Learner<T: Timer, C: Connection> {
@@ -111,10 +112,17 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 			}
 		}, ());
 
+		let mut process_time : Duration = Duration::from_micros(0);
+
 		for moment in sheet {
+
 			if !moment.is_empty() {
-				self.timer.sleep(counter);
+				self.timer.sleep_with_adjustment(counter, process_time);
 				counter = 0;
+				process_time = Duration::from_micros(0);
+
+				// calculate time difference between start processing midi event and received midi event from Piano
+				let start_time = Instant::now();
 
 				for event in &moment.events {
 					match event {
@@ -190,6 +198,10 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 					let mut condvar_lock_state = condvar_lock.lock().unwrap();
 					condvar_lock_state = condvar.wait(condvar_lock_state).unwrap();
 				}
+
+				// all notes pressed by Piano, calculate time difference now.
+				process_time = start_time.elapsed();
+				println!("Time difference: {:?}", process_time);
 			}
 
 			counter += 1;
