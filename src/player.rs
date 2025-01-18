@@ -11,7 +11,7 @@ use midly::{
 use crate::{
 	event::{Event, MidiEvent, Moment},
 	Timer,
-	get_led_index,
+	get_led_index, velocityrainbow_color
 };
 
 #[doc = include_str!("doc_player.md")]
@@ -64,22 +64,17 @@ impl<T: Timer, C: Connection> Player<T, C> {
 								MidiMessage::NoteOn { key, vel } => {
 
 									let index = get_led_index(key.as_int());
-									let mut value : u8;
+									let mut value = (0, 0, 0);
 
 									if vel == 0 {
-										value = 0;
+										value = (0, 0, 0);
 									} else {
-										// value = ((vel.as_int() as f32 / 127.0) * (100.0 / 10.0)) as u8;
-										value = 1;
-
-										if value < 1 {
-											value = 1;
-										}
+										value = velocityrainbow_color(vel.as_int());
 									}
 
-									data[index] = (0, 0, value);
+									data[index] = value;
 									adapter.write_rgb(&data).unwrap();
-									println!("NoteOn: key: {}, vel: {}, index: {}, value: {}", key, vel, index, value);
+									println!("NoteOn: key: {}, vel: {}, index: {}", key, vel, index);
 								}
 								MidiMessage::NoteOff { key, vel } => {
 
@@ -87,7 +82,7 @@ impl<T: Timer, C: Connection> Player<T, C> {
 
 									data[index] = (0, 0, 0);
 									adapter.write_rgb(&data).unwrap();
-									println!("NoteOff: key: {}, vel: {}, index: {}, value: 0", key, vel, index);
+									println!("NoteOff: key: {}, vel: {}, index: {}", key, vel, index);
 								}
 								_ => (),
 							}
