@@ -11,7 +11,7 @@ use midly::{
 use crate::{
 	event::{Event, MidiEvent, Moment},
 	Timer,
-	get_led_index, velocityrainbow_color
+	get_led_index, rainbow_color
 };
 
 #[doc = include_str!("doc_player.md")]
@@ -69,7 +69,7 @@ impl<T: Timer, C: Connection> Player<T, C> {
 									if vel == 0 {
 										value = (0, 0, 0);
 									} else {
-										value = velocityrainbow_color(vel.as_int());
+										value = rainbow_color(key.as_int());
 									}
 
 									data[index] = value;
