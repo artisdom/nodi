@@ -224,3 +224,8 @@ pub fn rainbow_color(note_position: u8) -> (u8, u8, u8) {
 	let index = value as usize & 255;
 	RAINBOW_COLOR_MAP[index as usize]
 }
+
+pub fn rainbow_color2(note_position: u8) -> (u8, u8, u8) {
+	let index = note_position as usize % 256;
+	RAINBOW_COLOR_MAP[index as usize]
+}
