@@ -47,6 +47,19 @@ pub trait Timer {
 		}
 	}
 
+	/// Sleeps for the given number of ticks with an adjustment.
+	///
+	/// # Arguments
+	/// - `n_ticks`: Number of MIDI ticks to sleep for.
+	/// - `adjustment`: Duration to adjust the sleep time by.
+	fn sleep_with_adjustment(&mut self, n_ticks: u32, adjustment: Duration) {
+		let t = self.sleep_duration(n_ticks);
+
+		if t > adjustment {
+			sleep(t - adjustment)
+		}
+	}
+
 	/// Calculates the length of a track or a slice of [Moment]s.
 	///
 	/// # Notes
