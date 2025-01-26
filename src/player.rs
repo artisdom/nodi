@@ -41,7 +41,7 @@ impl<T: Timer, C: Connection> Player<T, C> {
 	///
 	/// Stops playing if [Connection::play] returns `false`.
 	/// Returns `true` if the track is played through the end, `false` otherwise.
-	pub fn play(&mut self, sheet: &[Moment]) -> bool {
+	pub fn play(&mut self, sheet: &[Moment], right_hand_track: usize, left_hand_track: usize, learn_track: usize) -> bool {
 		let mut counter = 0_u32;
 		let mut adapter = WS28xxSpiAdapter::new("/dev/spidev0.0").unwrap();
 
@@ -58,7 +58,7 @@ impl<T: Timer, C: Connection> Player<T, C> {
 					match event {
 						Event::Tempo(val) => self.timer.change_tempo(*val),
 						Event::Midi(msg) => {
-							println!("msg.channel: {}", msg.channel.as_int());
+							let msg_track = msg.track.as_int() as usize;
 
 							match msg.message {
 								MidiMessage::NoteOn { key, vel } => {
@@ -70,7 +70,11 @@ impl<T: Timer, C: Connection> Player<T, C> {
 										value = (0, 0, 0);
 									} else {
 										// value = rainbow_color2(key.as_int());
-										value = (0, 0, 1);
+										if msg_track == right_hand_track {
+											value = (0, 1, 0); // Blue
+										} else {
+											value = (0, 0, 1); // Green
+										}
 									}
 
 									data[index] = value;
