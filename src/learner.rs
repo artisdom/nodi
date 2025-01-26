@@ -26,6 +26,81 @@ pub struct Learner<T: Timer, C: Connection> {
 	timer: T,
 }
 
+fn handle_midi_message(
+	message: &[u8],
+	notes_to_press: &Arc<Mutex<HashMap<u8, bool>>>,
+	notes_pressed: &Arc<Mutex<HashSet<u8>>>,
+	led_data: &Arc<Mutex<Vec<(u8, u8, u8)>>>,
+	adapter: &Arc<Mutex<WS28xxSpiAdapter>>,
+	condvar_pair: &Arc<(Mutex<bool>, Condvar)>
+) {
+	let key = message[1];
+	let index = get_led_index(key);
+
+	match message[0] & 0xF0 {
+
+		0x90 => { // Note on
+			// lock, modify then unlock immediately to avoid deadlocks
+			{
+				notes_pressed.lock().unwrap().insert(key);
+			}
+
+			let notes_to_press_contains_key;
+
+			// lock(then modify and unlock) notes_to_press
+			{
+				let mut notes_to_press = notes_to_press.lock().unwrap();
+				notes_to_press_contains_key = notes_to_press.contains_key(&key);
+				if notes_to_press_contains_key {
+					notes_to_press.insert(key, true); // mark the note as pressed
+
+					// Notify note pressed event
+					{
+						let mut condvar_lock = condvar_pair.0.lock().unwrap();
+						*condvar_lock = true;
+						condvar_pair.1.notify_one();
+					}
+				}
+			}
+
+			// lock(then modify and unlock) led_data
+			if notes_to_press_contains_key == false {
+				let mut data = led_data.lock().unwrap();
+				data[index] = (1, 0, 0); // Show red led when a wrong note pressed
+				adapter.lock().unwrap().write_rgb(&data).unwrap();
+			}
+		}
+
+		0x80 => { // Note off
+			// lock, modify then unlock immediately to avoid deadlocks
+			{
+				notes_pressed.lock().unwrap().remove(&key);
+			}
+
+			let notes_to_press_contains_key;
+
+			// lock(then modify and unlock) notes_to_press
+			{
+				let mut notes_to_press = notes_to_press.lock().unwrap();
+				notes_to_press_contains_key = notes_to_press.contains_key(&key);
+
+				if notes_to_press_contains_key {
+					notes_to_press.insert(key, false); // mark the note as released
+				}
+			}
+
+			// lock(then modify and unlock) led_data
+			if notes_to_press_contains_key == false {
+				let mut data = led_data.lock().unwrap();
+				data[index] = (0, 0, 0); // clear the wrong note red led
+				adapter.lock().unwrap().write_rgb(&data).unwrap();
+			}
+		}
+
+		_ => (),
+	}
+}
+
 impl<T: Timer, C: Connection> Learner<T, C> {
 	/// Creates a new [Learner] with the given [Timer] and
 	/// [Connection].
@@ -36,6 +111,21 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 	/// Changes `self.timer`, returning the old one.
 	pub fn set_timer(&mut self, timer: T) -> T {
 		std::mem::replace(&mut self.timer, timer)
+	}
+
+	fn wait_for_keys(&self, condvar_pair: &Arc<(Mutex<bool>, Condvar)>, notes_to_press: &Arc<Mutex<HashMap<u8, bool>>>) {
+		while !notes_to_press.lock().unwrap().is_empty() {
+			if notes_to_press.lock().unwrap().values().all(|&v| v) {
+				break;
+			}
+
+			// Wait for keys being pressed.
+			{
+				let &(ref condvar_lock, ref condvar) = &**condvar_pair;
+				let mut condvar_lock_state = condvar_lock.lock().unwrap();
+				condvar_lock_state = condvar.wait(condvar_lock_state).unwrap();
+			}
+		}
 	}
 
 	/// Learn the given [Moment] slice.
@@ -70,45 +160,16 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 		let condvar_pair_clone = condvar_pair.clone();
 
 		let _in_conn = midi_in.connect(in_port, "Casio", move |stamp, message, _| {
-			let &(ref condvar_lock, ref condvar) = &*condvar_pair_clone;
-
 			if message[0] != 254 {
 				println!("{}: {:?} (len = {})", stamp, message, message.len());
-
-				let key = message[1];
-				let index = get_led_index(key);
-
-				match message[0] & 0xF0 {
-					0x90 => { // Note on
-						notes_pressed_clone.lock().unwrap().insert(key);
-
-						let mut notes_to_press = notes_to_press_clone.lock().unwrap();
-
-						if notes_to_press.contains_key(&key) {
-							notes_to_press.insert(key, true); // mark the note as pressed
-							*condvar_lock.lock().unwrap() = true;
-							condvar.notify_one();
-						} else {
-							let mut data = led_data_clone.lock().unwrap();
-							data[index] = (1, 0, 0); // show red led to show a wrong note pressed
-							adapter_clone.lock().unwrap().write_rgb(&data).unwrap();
-						}
-					}
-					0x80 => { // Note off
-						notes_pressed_clone.lock().unwrap().remove(&key);
-
-						let mut notes_to_press = notes_to_press_clone.lock().unwrap();
-
-						if notes_to_press.contains_key(&key) {
-							notes_to_press.insert(key, false); // mark the note as released
-						} else {
-							let mut data = led_data_clone.lock().unwrap();
-							data[index] = (0, 0, 0); // clear the wrong note led
-							adapter_clone.lock().unwrap().write_rgb(&data).unwrap();
-						}
-					}
-					_ => (),
-				}
+				handle_midi_message(
+					message,
+					&notes_to_press_clone,
+					&notes_pressed_clone,
+					&led_data_clone,
+					&adapter_clone,
+					&condvar_pair_clone
+				);
 			}
 		}, ());
 
@@ -118,13 +179,15 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 
 			if !moment.is_empty() {
 				self.timer.sleep_with_adjustment(counter, process_time);
-				counter = 0;
+				counter = 0; // reset counter and process_time to start processing next moment
 				process_time = Duration::from_micros(0);
 
 				// calculate time difference between start processing midi event and received midi event from Piano
 				let start_time = Instant::now();
 
 				for event in &moment.events {
+					println!("Processing next midi file event: {:?}", event);
+
 					match event {
 						Event::Tempo(val) => self.timer.change_tempo(*val),
 						Event::Midi(msg) => {
@@ -135,33 +198,47 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 								MidiMessage::NoteOn { key, vel } => {
 									let index = get_led_index(key.as_int());
 									let mut value : u8;
-									let mut data = led_data.lock().unwrap();
 
-									if vel == 0 {
-										value = 0;
-										data[index] = (0, 0, value);
-									} else {
+									// lock(then modify and unlock) notes_pressed, all in this block immediately to avoid deadlocks
+									{
 										if notes_pressed.lock().unwrap().contains(&key.as_int()) {
 											value = 2; // use a deeper color to show the same note needs to be pressed again
 										} else {
 											value = 1;
 										}
-
-										if msg_track == right_hand_track {
-											data[index] = (0, value, 0); // Blue
-										} else {
-											data[index] = (0, 0, value); // Green
-										}
-
-										if msg_track == learn_track && key >= 36 && key <= 96 { // support 61 keyborad
-											notes_to_press.lock().unwrap().insert(key.as_int(), false);
-											play_note = false;
-										}
 									}
-									adapter.lock().unwrap().write_rgb(&data).unwrap();
+
+									// lock(then modify and unlock) led_data
+									{
+										let mut data = led_data.lock().unwrap();
+
+										// velocity of 0 is equivalent to a "NoteOff" message
+										if vel == 0 {
+											value = 0;
+											data[index] = (0, 0, value);
+										} else {
+											if msg_track == right_hand_track {
+												data[index] = (0, value, 0); // Blue
+											} else {
+												data[index] = (0, 0, value); // Green
+											}
+										}
+
+										adapter.lock().unwrap().write_rgb(&data).unwrap();
+									}
+
+									// lock(then modify and unlock) notes_to_press
+									if vel != 0 && msg_track == learn_track && key >= 36 && key <= 96 { // support 61 keyborad
+										notes_to_press.lock().unwrap().insert(key.as_int(), false);
+										play_note = false;
+									}
+
 									println!("NoteOn: key: {}, vel: {}, index: {}, value: {}", key, vel, index, value);
 								}
+
 								MidiMessage::NoteOff { key, vel } => {
+									// lock(then modify and unlock) led_data
+
 									let index = get_led_index(key.as_int());
 									let mut data = led_data.lock().unwrap();
 									data[index] = (0, 0, 0);
@@ -173,6 +250,7 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 
 									println!("NoteOff: key: {}, vel: {}, index: {}, value: 0", key, vel, index);
 								}
+
 								_ => (),
 							}
 
@@ -181,31 +259,21 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 									return false;
 								}
 							}
-
-							play_note = true; // reset play_note
 						}
 						_ => (),
 					};
 				}
 
-				while !notes_to_press.lock().unwrap().is_empty() {
-					if notes_to_press.lock().unwrap().values().all(|&v| v) {
-						break;
-					}
-
-					// Wait for keys being pressed.
-					let &(ref condvar_lock, ref condvar) = &*condvar_pair;
-					let mut condvar_lock_state = condvar_lock.lock().unwrap();
-					condvar_lock_state = condvar.wait(condvar_lock_state).unwrap();
-				}
+				self.wait_for_keys(&condvar_pair, &notes_to_press);
 
 				// all notes pressed by Piano, calculate time difference now.
 				process_time = start_time.elapsed();
 				println!("Time difference: {:?}", process_time);
+
+				notes_to_press.lock().unwrap().clear();
 			}
 
 			counter += 1;
-			notes_to_press.lock().unwrap().clear();
 		}
 
 		let data_clear = vec![(0, 0, 0); num_leds];
