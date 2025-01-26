@@ -2,6 +2,7 @@ use std::{convert::TryFrom, error::Error, fs};
 
 use clap::{arg, Command};
 use midir::{MidiOutput, MidiOutputConnection};
+use midly::{TrackEvent, TrackEventKind};
 use nodi::{
 	midly::{Format, Smf},
 	timers::Ticker,
@@ -61,8 +62,73 @@ impl Args {
 		let mut player = Player::new(timer, con);
 
 		println!("starting playback");
-		player.play(&sheet);
+		let (right_hand_track, left_hand_track, learn_track) = convert_hand_no_to_track(&tracks, 2);
+		player.play(&sheet, right_hand_track, left_hand_track, learn_track);
 		Ok(())
+	}
+}
+
+// hand_no: 0 for right hand, 1 for left hand, 2 for both hands
+pub fn convert_hand_no_to_track(tracks: &[Vec<TrackEvent<'_>>], hand_no: usize) -> (usize, usize, usize) {
+	let mut right_hand_track = 0;
+	let mut left_hand_track = 0;
+	let mut learn_track = 0;
+
+	let track_count = tracks.len();
+
+	if track_count == 0 {
+		return (right_hand_track, left_hand_track, learn_track);
+	} else if track_count == 1 {
+		return (right_hand_track, left_hand_track, learn_track);
+	} else {
+		let first_track_index = track_count - 2;
+		let second_track_index = track_count - 1;
+
+		let first_track = &tracks[first_track_index];
+		let second_track = &tracks[second_track_index];
+
+		let mut first_track_note = 0;
+		let mut second_track_note = 0;
+
+		// get the first note of the first track
+		for event in first_track {
+			let kind = event.kind;
+			if let TrackEventKind::Midi { message, .. } = kind {
+				if let midly::MidiMessage::NoteOn { key, .. } = message {
+					first_track_note = key.as_int();
+					break;
+				}
+			}
+		}
+
+		// get the first note of the second track
+		for event in second_track {
+			let kind = event.kind;
+			if let TrackEventKind::Midi { message, .. } = kind {
+				if let midly::MidiMessage::NoteOn { key, .. } = message {
+					second_track_note = key.as_int();
+					break;
+				}
+			}
+		}
+
+		if second_track_note > first_track_note {
+			right_hand_track = second_track_index;
+			left_hand_track = first_track_index;
+		} else {
+			right_hand_track = first_track_index;
+			left_hand_track = second_track_index;
+		}
+
+		if hand_no == 0 {
+			learn_track = right_hand_track;
+		} else if hand_no == 1 {
+			learn_track = left_hand_track;
+		} else {
+			learn_track = 0; // use track 0 to indicate both hands
+		}
+
+		return (right_hand_track, left_hand_track, learn_track);
 	}
 }
 
