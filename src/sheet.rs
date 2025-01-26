@@ -33,10 +33,29 @@ impl Sheet {
 
 		let mut first = Self::from(tracks[0].as_slice());
 
-		for track in &tracks[1..] {
-			let sh = Self::from(track.as_slice());
+		// Set track number for first track's events
+		for moment in &mut first.0 {
+			for event in &mut moment.events {
+				if let crate::event::Event::Midi(midi_event) = event {
+					midi_event.track = 0.into();
+				}
+			}
+		}
+
+		for (track_idx, track) in tracks[1..].iter().enumerate() {
+			let mut sh = Self::from(track.as_slice());
+
+			// Set track number for current track's events
+			for moment in &mut sh.0 {
+				for event in &mut moment.events {
+					if let crate::event::Event::Midi(midi_event) = event {
+						midi_event.track = ((track_idx + 1) as u8).into();
+					}
+				}
+			}
 			first.merge_with(sh);
 		}
+
 		first
 	}
 
@@ -53,10 +72,29 @@ impl Sheet {
 
 		let mut first = Self::from(tracks[0].as_slice());
 
-		for track in &tracks[1..] {
-			let sh = Self::from(track.as_slice());
+		// Set track number for first track's events
+		for moment in &mut first.0 {
+			for event in &mut moment.events {
+				if let crate::event::Event::Midi(midi_event) = event {
+					midi_event.track = 0.into();
+				}
+			}
+		}
+
+		for (track_idx, track) in tracks[1..].iter().enumerate() {
+			let mut sh = Self::from(track.as_slice());
+
+			// Set track number for current track's events
+			for moment in &mut sh.0 {
+				for event in &mut moment.events {
+					if let crate::event::Event::Midi(midi_event) = event {
+						midi_event.track = ((track_idx + 1) as u8).into();
+					}
+				}
+			}
 			first.extend(sh);
 		}
+
 		first
 	}
 

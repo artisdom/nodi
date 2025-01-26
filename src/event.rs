@@ -60,6 +60,8 @@ pub enum Event {
 /// ```
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct MidiEvent {
+	/// The midi track this event belongs to.
+	pub track: u4,
 	/// The channel this event is to be sent to.
 	pub channel: u4,
 	/// The message body.
@@ -86,7 +88,7 @@ impl<'a> TryFrom<TrackEventKind<'a>> for Event {
 	/// Will return an error if the given [TrackEventKind] is not compatible.
 	fn try_from(event: TrackEventKind<'_>) -> Result<Self, Self::Error> {
 		Ok(match event {
-			TrackEventKind::Midi { channel, message } => Self::Midi(MidiEvent { channel, message }),
+			TrackEventKind::Midi { channel, message } => Self::Midi(MidiEvent { track : 0.into(), channel, message }),
 			TrackEventKind::Meta(MetaMessage::Tempo(n)) => Self::Tempo(u32::from(n)),
 			TrackEventKind::Meta(MetaMessage::TimeSignature(a, b, c, d)) => {
 				Self::TimeSignature(a, b, c, d)

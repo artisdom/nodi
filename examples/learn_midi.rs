@@ -1,18 +1,20 @@
 use std::{convert::TryFrom, error::Error, fs};
 
 use clap::{arg, Command};
-use midir::{MidiOutput, MidiOutputConnection};
+use midir::{MidiOutput, MidiOutputConnection, MidiInput, MidiInputConnection, MidiInputPort};
 use midly::{TrackEvent, TrackEventKind};
 use nodi::{
 	midly::{Format, Smf},
 	timers::Ticker,
-	Player, Sheet,
+	Learner, Event, Moment, Sheet,
 };
 
 struct Args {
 	file: String,
 	device_no: usize,
 	list: bool,
+	hand_no: usize,
+	track_no: usize,
 }
 
 impl Args {
@@ -29,17 +31,35 @@ impl Args {
 					}),
 				arg!(-l --list "List available MIDI devices."),
 				arg!(file: [FILE] "A MIDI file to play.").required_unless_present("list"),
+				arg!(-h --hand [Hand] "Learn Right(0), Left(1) or Both(2) hand notes.")
+					.default_value("0")
+					.validator(|s| {
+						s.parse::<usize>()
+							.map(|_| {})
+							.map_err(|_| String::from("the value must be 0, 1, or 2"))
+					}),
+				arg!(-t --track [Track] "Index of the Midi track to learn.")
+					.default_value("0")
+					.validator(|s| {
+						s.parse::<usize>()
+							.map(|_| {})
+							.map_err(|_| String::from("the value must be a positive integer or 0"))
+					}),
 			])
 			.get_matches();
 
 		let list = m.is_present("list");
 		let device_no = m.value_of("device").unwrap().parse::<usize>().unwrap();
 		let file = m.value_of("file").map(String::from).unwrap_or_default();
+		let hand_no = m.value_of("hand").unwrap().parse::<usize>().unwrap();
+		let track_no = m.value_of("track").unwrap().parse::<usize>().unwrap();
 
 		Self {
 			file,
 			device_no,
 			list,
+			hand_no,
+			track_no,
 		}
 	}
 
@@ -59,11 +79,12 @@ impl Args {
 			Format::Parallel => Sheet::parallel(&tracks),
 		};
 
-		let mut player = Player::new(timer, con);
+		let mut learner = Learner::new(timer, con, self.device_no);
 
-		println!("starting playback");
-		let (right_hand_track, left_hand_track, learn_track) = convert_hand_no_to_track(&tracks, 2);
-		player.play(&sheet, right_hand_track, left_hand_track, learn_track);
+		println!("starting learn midi");
+		let (right_hand_track, left_hand_track, learn_track) = convert_hand_no_to_track(&tracks, self.hand_no);
+
+		learner.learn(&sheet, right_hand_track, left_hand_track, learn_track);
 		Ok(())
 	}
 }
@@ -132,6 +153,22 @@ pub fn convert_hand_no_to_track(tracks: &[Vec<TrackEvent<'_>>], hand_no: usize) 
 	}
 }
 
+pub fn extract_meta_events(sheet: &Sheet) -> Sheet {
+	let mut sheet = sheet.clone();
+
+	for m in sheet.iter_mut() {
+		if !m.is_empty() {
+			m.events.retain(|e| !matches!(e, Event::Midi { .. }));
+
+			if m.events.is_empty() {
+				*m = Moment::default();
+			}
+		}
+	}
+
+	sheet
+}
+
 fn get_connection(n: usize) -> Result<MidiOutputConnection, Box<dyn Error>> {
 	let midi_out = MidiOutput::new("play_midi")?;
 
@@ -150,6 +187,26 @@ fn get_connection(n: usize) -> Result<MidiOutputConnection, Box<dyn Error>> {
 	let out_port = &out_ports[n];
 	let out = midi_out.connect(out_port, "cello-tabs")?;
 	Ok(out)
+}
+
+fn get_input_port(n: usize) -> Result<MidiInputPort, Box<dyn Error>> {
+	let midi_in = MidiInput::new("learn_midi")?;
+
+	let in_ports = midi_in.ports();
+	if in_ports.is_empty() {
+		return Err("no MIDI input device detected".into());
+	}
+	if n >= in_ports.len() {
+		return Err(format!(
+			"only {} MIDI devices detected; run with --list  to see them",
+			in_ports.len()
+		)
+		.into());
+	}
+
+	let in_port = &in_ports[n];
+	// let in_conn = midi_in.connect(in_port, "cello-tabs", move |_, _, _| {}, ())?;
+	Ok(in_port.clone())
 }
 
 fn list_devices() -> Result<(), Box<dyn Error>> {

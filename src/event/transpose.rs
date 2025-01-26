@@ -71,6 +71,7 @@ impl MidiEvent {
 		Some(Self {
 			message,
 			channel: self.channel,
+			track: 0.into(),
 		})
 	}
 }
@@ -86,6 +87,7 @@ mod tests {
 				events: range
 					.map(|n| {
 						Event::Midi(MidiEvent {
+							track: 0.into(),
 							channel: 0.into(),
 							message: MidiMessage::NoteOn {
 								key: (n as u8).into(),

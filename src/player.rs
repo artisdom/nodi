@@ -1,3 +1,6 @@
+use ws2818_rgb_led_spi_driver::adapter_gen::WS28xxAdapter;
+use ws2818_rgb_led_spi_driver::adapter_spi::WS28xxSpiAdapter;
+
 #[cfg(feature = "midir")]
 use midir::{self, MidiOutputConnection};
 use midly::{
@@ -8,6 +11,7 @@ use midly::{
 use crate::{
 	event::{Event, MidiEvent, Moment},
 	Timer,
+	get_led_index, rainbow_color2
 };
 
 #[doc = include_str!("doc_player.md")]
@@ -37,8 +41,13 @@ impl<T: Timer, C: Connection> Player<T, C> {
 	///
 	/// Stops playing if [Connection::play] returns `false`.
 	/// Returns `true` if the track is played through the end, `false` otherwise.
-	pub fn play(&mut self, sheet: &[Moment]) -> bool {
+	pub fn play(&mut self, sheet: &[Moment], right_hand_track: usize, left_hand_track: usize, learn_track: usize) -> bool {
 		let mut counter = 0_u32;
+		let mut adapter = WS28xxSpiAdapter::new("/dev/spidev0.0").unwrap();
+
+		let (num_leds, r, g, b) = (176, 0, 0, 0);
+		let mut data = vec![(r, g, b); num_leds];
+		adapter.write_rgb(&data).unwrap();
 
 		for moment in sheet {
 			if !moment.is_empty() {
@@ -49,6 +58,40 @@ impl<T: Timer, C: Connection> Player<T, C> {
 					match event {
 						Event::Tempo(val) => self.timer.change_tempo(*val),
 						Event::Midi(msg) => {
+							let msg_track = msg.track.as_int() as usize;
+
+							match msg.message {
+								MidiMessage::NoteOn { key, vel } => {
+
+									let index = get_led_index(key.as_int());
+									let mut value = (0, 0, 0);
+
+									if vel == 0 {
+										value = (0, 0, 0);
+									} else {
+										// value = rainbow_color2(key.as_int());
+										if msg_track == right_hand_track {
+											value = (0, 1, 0); // Blue
+										} else {
+											value = (0, 0, 1); // Green
+										}
+									}
+
+									data[index] = value;
+									adapter.write_rgb(&data).unwrap();
+									println!("NoteOn: key: {}, vel: {}, index: {}, value: {:?}", key, vel, index, value);
+								}
+								MidiMessage::NoteOff { key, vel } => {
+
+									let index = get_led_index(key.as_int());
+
+									data[index] = (0, 0, 0);
+									adapter.write_rgb(&data).unwrap();
+									println!("NoteOff: key: {}, vel: {}, index: {}", key, vel, index);
+								}
+								_ => (),
+							}
+
 							if !self.con.play(*msg) {
 								return false;
 							}
@@ -60,6 +103,9 @@ impl<T: Timer, C: Connection> Player<T, C> {
 
 			counter += 1;
 		}
+
+		let data_clear = vec![(0, 0, 0); num_leds];
+		adapter.write_rgb(&data_clear).unwrap();
 
 		true
 	}
@@ -92,6 +138,7 @@ pub trait Connection {
 		for ch in 0..16 {
 			for note in 0..=127 {
 				self.play(MidiEvent {
+					track: 0.into(),
 					channel: ch.into(),
 					message: MidiMessage::NoteOff {
 						key: note.into(),
