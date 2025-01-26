@@ -41,13 +41,16 @@ fn handle_midi_message(
 
 		0x90 => { // Note on
 			// lock, modify then unlock immediately to avoid deadlocks
+			println!("handle_midi_message Note on: lock and modify notes_pressed");
 			{
 				notes_pressed.lock().unwrap().insert(key);
 			}
+			println!("handle_midi_message Note on: lock and modify notes_pressed done");
 
 			let notes_to_press_contains_key;
 
 			// lock(then modify and unlock) notes_to_press
+			println!("handle_midi_message Note on: lock and modify notes_to_press");
 			{
 				let mut notes_to_press = notes_to_press.lock().unwrap();
 				notes_to_press_contains_key = notes_to_press.contains_key(&key);
@@ -62,24 +65,30 @@ fn handle_midi_message(
 					}
 				}
 			}
+			println!("handle_midi_message Note on: lock and modify notes_to_press done");
 
 			// lock(then modify and unlock) led_data
 			if notes_to_press_contains_key == false {
+				println!("handle_midi_message Note on: lock and modify led_data");
 				let mut data = led_data.lock().unwrap();
 				data[index] = (1, 0, 0); // Show red led when a wrong note pressed
 				adapter.lock().unwrap().write_rgb(&data).unwrap();
+				println!("handle_midi_message Note on: lock and modify led_data done");
 			}
 		}
 
 		0x80 => { // Note off
 			// lock, modify then unlock immediately to avoid deadlocks
+			println!("handle_midi_message Note off: lock and modify notes_pressed");
 			{
 				notes_pressed.lock().unwrap().remove(&key);
 			}
+			println!("handle_midi_message Note off: lock and modify notes_pressed done");
 
 			let notes_to_press_contains_key;
 
 			// lock(then modify and unlock) notes_to_press
+			println!("handle_midi_message Note off: lock and modify notes_to_press");
 			{
 				let mut notes_to_press = notes_to_press.lock().unwrap();
 				notes_to_press_contains_key = notes_to_press.contains_key(&key);
@@ -88,12 +97,15 @@ fn handle_midi_message(
 					notes_to_press.insert(key, false); // mark the note as released
 				}
 			}
+			println!("handle_midi_message Note off: lock and modify notes_to_press done");
 
 			// lock(then modify and unlock) led_data
 			if notes_to_press_contains_key == false {
+				println!("handle_midi_message Note off: lock and modify led_data");
 				let mut data = led_data.lock().unwrap();
 				data[index] = (0, 0, 0); // clear the wrong note red led
 				adapter.lock().unwrap().write_rgb(&data).unwrap();
+				println!("handle_midi_message Note off: lock and modify led_data done");
 			}
 		}
 
@@ -200,6 +212,7 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 									let mut value : u8;
 
 									// lock(then modify and unlock) notes_pressed, all in this block immediately to avoid deadlocks
+									println!("process midi file event Note on: lock and modify notes_pressed");
 									{
 										if notes_pressed.lock().unwrap().contains(&key.as_int()) {
 											value = 2; // use a deeper color to show the same note needs to be pressed again
@@ -207,8 +220,10 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 											value = 1;
 										}
 									}
+									println!("process midi file event Note on: lock and modify notes_pressed done");
 
 									// lock(then modify and unlock) led_data
+									println!("process midi file event Note on: lock and modify led_data");
 									{
 										let mut data = led_data.lock().unwrap();
 
@@ -226,11 +241,14 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 
 										adapter.lock().unwrap().write_rgb(&data).unwrap();
 									}
+									println!("process midi file event Note on: lock and modify led_data done");
 
 									// lock(then modify and unlock) notes_to_press
 									if vel != 0 && msg_track == learn_track && key >= 36 && key <= 96 { // support 61 keyborad
+										println!("process midi file event Note on: lock and modify notes_to_press");
 										notes_to_press.lock().unwrap().insert(key.as_int(), false);
 										play_note = false;
+										println!("process midi file event Note on: lock and modify notes_to_press done");
 									}
 
 									println!("NoteOn: key: {}, vel: {}, index: {}, value: {}", key, vel, index, value);
@@ -239,10 +257,12 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 								MidiMessage::NoteOff { key, vel } => {
 									// lock(then modify and unlock) led_data
 
+									println!("process midi file event Note off: lock and modify led_data");
 									let index = get_led_index(key.as_int());
 									let mut data = led_data.lock().unwrap();
 									data[index] = (0, 0, 0);
 									adapter.lock().unwrap().write_rgb(&data).unwrap();
+									println!("process midi file event Note off: lock and modify led_data done");
 
 									if msg_track == learn_track && key >= 36 && key <= 96 {
 										play_note = false;
@@ -255,9 +275,11 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 							}
 
 							if play_note {
+								println!("Play notes from other tracks");
 								if !self.con.play(*msg) {
 									return false;
 								}
+								println!("Play notes from other tracks done");
 							}
 						}
 						_ => (),
