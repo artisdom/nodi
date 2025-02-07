@@ -228,7 +228,8 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 									}
 
 									// lock(then modify and unlock) notes_to_press
-									if vel != 0 && msg_track == learn_track && key >= 36 && key <= 96 { // support 61 keyborad
+									if (learn_track == 0) || // learn_track is 0, learning all tracks.
+									    (vel != 0 && msg_track == learn_track && key >= 36 && key <= 96) { // support 61 keyborad
 										notes_to_press.lock().unwrap().insert(key.as_int(), false);
 										play_note = false;
 									}
@@ -244,7 +245,8 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 									data[index] = (0, 0, 0);
 									adapter.lock().unwrap().write_rgb(&data).unwrap();
 
-									if msg_track == learn_track && key >= 36 && key <= 96 {
+									if (learn_track == 0) || // learn_track is 0, learning all tracks.
+									    (msg_track == learn_track && key >= 36 && key <= 96) {
 										play_note = false;
 									}
 
