@@ -26,6 +26,10 @@ midir-winrt = ["midir/winrt"]
 name = "play_midi"
 required-features = [ "midir" ]
 
+[[example]]
+name = "learn_midi"
+required-features = [ "midir" ]
+
 [dependencies]
 midir = { version = "0.10.1", optional = true }
 midly = "0.5.3"
