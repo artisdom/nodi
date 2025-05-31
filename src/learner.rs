@@ -113,7 +113,7 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 		std::mem::replace(&mut self.timer, timer)
 	}
 
-	fn wait_for_keys(&self, condvar_pair: &Arc<(Mutex<bool>, Condvar)>, notes_to_press: &Arc<Mutex<HashMap<u8, bool>>>) {
+	fn wait_for_keys(&mut self, condvar_pair: &Arc<(Mutex<bool>, Condvar)>, notes_to_press: &Arc<Mutex<HashMap<u8, bool>>>) {
 		while !notes_to_press.lock().unwrap().is_empty() {
 			if notes_to_press.lock().unwrap().values().all(|&v| v) {
 				break;
@@ -123,7 +123,21 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 			{
 				let &(ref condvar_lock, ref condvar) = &**condvar_pair;
 				let mut condvar_lock_state = condvar_lock.lock().unwrap();
-				condvar_lock_state = condvar.wait(condvar_lock_state).unwrap();
+				let (lock_result, _timeout_result) = condvar.wait_timeout(condvar_lock_state, std::time::Duration::from_secs(10)).unwrap();
+				condvar_lock_state = lock_result;
+			}
+
+			// send NoteOn messages with velocity 1 for all notes in notes_to_press to light up the leds on Piano again.
+			for (&key, _) in notes_to_press.lock().unwrap().iter() {
+				let led_on_msg = MidiEvent {
+					track: 0.into(),
+					channel: 0.into(),
+					message: MidiMessage::NoteOn {
+						key: key.into(),
+						vel: 1.into(),
+					},
+				};
+				self.con.play(led_on_msg); // send led on message to Piano, so the Piano can turn on the leds.
 			}
 		}
 	}
@@ -231,6 +245,15 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 									if (learn_track == 0) || // learn_track is 0, learning all tracks.
 									    (vel != 0 && msg_track == learn_track) {
 										notes_to_press.lock().unwrap().insert(key.as_int(), false);
+
+										let mut led_on_msg = *msg;
+										// set led_msg velocity to 1
+										led_on_msg.message = MidiMessage::NoteOn {
+											key,
+											vel: 1.into(),
+										};
+										self.con.play(led_on_msg); // send led on message to Piano, so the Piano can light up the key.
+
 										play_note = false;
 									}
 
@@ -271,6 +294,19 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 				// all notes pressed by Piano, calculate time difference now.
 				process_time = start_time.elapsed();
 				println!("Time difference: {:?}", process_time);
+
+				// Send led off messages for all notes that were pressed.
+				for (&key, _) in notes_to_press.lock().unwrap().iter() {
+					let led_off_msg = MidiEvent {
+						track: 0.into(),
+						channel: 0.into(),
+						message: MidiMessage::NoteOff {
+							key: key.into(),
+							vel: 0.into(),
+						},
+					};
+					self.con.play(led_off_msg); // send led off message to Piano, so the Piano can turn off the leds.
+				}
 
 				notes_to_press.lock().unwrap().clear();
 			}
