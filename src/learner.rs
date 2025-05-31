@@ -229,7 +229,7 @@ impl<T: Timer, C: Connection> Learner<T, C> {
 
 									// lock(then modify and unlock) notes_to_press
 									if (learn_track == 0) || // learn_track is 0, learning all tracks.
-									    (vel != 0 && msg_track == learn_track && key >= 36 && key <= 96) { // support 61 keyborad
+									    (vel != 0 && msg_track == learn_track) {
 										notes_to_press.lock().unwrap().insert(key.as_int(), false);
 										play_note = false;
 									}
